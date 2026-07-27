@@ -209,8 +209,16 @@
 			const client = mqtt.connect(BROKER_URL, { reconnectPeriod: 2000 });
 
 			client.on("connect", () => {
+				console.log("Connected");
 				connEl.textContent = "connected";
-				client.subscribe(STATUS_TOPIC);
+
+				client.subscribe(STATUS_TOPIC, (err) => {
+					if (err) {
+						console.error("Subscribe failed", err);
+					} else {
+						console.log("Subscribed to", STATUS_TOPIC);
+					}
+				});
 			});
 
 			client.on("reconnect", () => {
@@ -225,6 +233,8 @@
 			});
 
 			client.on("message", (topic, message) => {
+				console.log("Received:", topic, message.toString());
+
 				if (topic === STATE_TOPIC) {
 					highlight(message.toString());
 				}
