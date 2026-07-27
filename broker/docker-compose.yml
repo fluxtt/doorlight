@@ -7,6 +7,6 @@ services:
       - "1883:1883" # MQTT
       - "9001:9001" # MQTT over websockets (for the browser control page)
     volumes:
-      - ./broker/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./broker/data:/mosquitto/data
-      - ./broker/log:/mosquitto/log
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./data:/mosquitto/data
+      - ./log:/mosquitto/log
