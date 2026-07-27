@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>doorlight :: control</title>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+		<style>
+			:root {
+				--bg: #0b0d0a;
+				--panel: #12160f;
+				--line: #263321;
+				--text: #c9d6bd;
+				--dim: #6a7a5e;
+				--red: #ff4d4d;
+				--amber: #ffb020;
+				--green: #3ddc84;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				min-height: 100vh;
+				background: var(--bg);
+				color: var(--text);
+				font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 24px;
+			}
+			.term {
+				width: 100%;
+				max-width: 420px;
+				border: 1px solid var(--line);
+				background: var(--panel);
+				border-radius: 4px;
+				overflow: hidden;
+			}
+			.term-bar {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 8px 12px;
+				background: #0e120c;
+				border-bottom: 1px solid var(--line);
+				font-size: 12px;
+				color: var(--dim);
+			}
+			.dot {
+				width: 8px;
+				height: 8px;
+				border-radius: 50%;
+				background: var(--line);
+			}
+			.term-body {
+				padding: 20px;
+			}
+			.path {
+				color: var(--dim);
+				font-size: 12px;
+				margin-bottom: 4px;
+			}
+			h1 {
+				font-size: 15px;
+				font-weight: 600;
+				margin: 0 0 18px 0;
+				letter-spacing: 0.02em;
+			}
+			h1::before {
+				content: "$ ";
+				color: var(--dim);
+			}
+			.status-line {
+				font-size: 12px;
+				color: var(--dim);
+				margin-bottom: 16px;
+				min-height: 16px;
+			}
+			.status-line .val {
+				color: var(--text);
+			}
+			.buttons {
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+			}
+			button {
+				font-family: inherit;
+				font-size: 13px;
+				text-align: left;
+				padding: 12px 14px;
+				border-radius: 3px;
+				border: 1px solid var(--line);
+				background: #0e120c;
+				color: var(--text);
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				transition:
+					border-color 0.15s ease,
+					background 0.15s ease;
+			}
+			button:hover {
+				background: #171d12;
+			}
+			button:active {
+				transform: translateY(1px);
+			}
+			button.active {
+				border-color: var(--accent);
+				background: #171d12;
+			}
+			.led {
+				width: 10px;
+				height: 10px;
+				border-radius: 50%;
+				box-shadow: 0 0 6px currentColor;
+				flex-shrink: 0;
+			}
+			#btn-dnd .led {
+				background: var(--red);
+				color: var(--red);
+			}
+			#btn-busy .led {
+				background: var(--amber);
+				color: var(--amber);
+			}
+			#btn-free .led {
+				background: var(--green);
+				color: var(--green);
+			}
+			#btn-dnd.active {
+				border-color: var(--red);
+			}
+			#btn-busy.active {
+				border-color: var(--amber);
+			}
+			#btn-free.active {
+				border-color: var(--green);
+			}
+			.cmd {
+				color: var(--dim);
+			}
+			.footer {
+				margin-top: 18px;
+				font-size: 11px;
+				color: var(--dim);
+				border-top: 1px solid var(--line);
+				padding-top: 12px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="term">
+			<div class="term-bar">
+				<span class="dot"></span><span class="dot"></span
+				><span class="dot"></span>&nbsp;doorlight
+			</div>
+			<div class="term-body">
+				<div class="path">~/doorlight</div>
+				<h1>set-status</h1>
+
+				<div class="status-line">
+					broker: <span class="val" id="conn-state">connecting…</span>
+				</div>
+
+				<div class="buttons">
+					<button id="btn-dnd" onclick="setStatus('dnd')">
+						<span class="led"></span><span class="cmd">--dnd</span>&nbsp;Do Not
+						Disturb
+					</button>
+					<button id="btn-busy" onclick="setStatus('busy')">
+						<span class="led"></span><span class="cmd">--busy</span>&nbsp;Busy
+					</button>
+					<button id="btn-free" onclick="setStatus('free')">
+						<span class="led"></span><span class="cmd">--free</span>&nbsp;Free
+					</button>
+				</div>
+
+				<div class="footer">
+					current: <span class="val" id="current-state">unknown</span>
+				</div>
+			</div>
+		</div>
+		<script>
+			// Point this at your Mosquitto broker's websocket listener.
+			const BROKER_URL = "ws://192.168.1.161:9001";
+			const STATUS_TOPIC = "doorlight/status/state";
+			const COMMAND_TOPIC = "doorlight/status/set";
+
+			const connEl = document.getElementById("conn-state");
+			const currentEl = document.getElementById("current-state");
+			const buttons = {
+				dnd: document.getElementById("btn-dnd"),
+				busy: document.getElementById("btn-busy"),
+				free: document.getElementById("btn-free"),
+			};
+
+			function hightlight(state) {
+				Object.entries(buttons).forEach(([key, el]) => {
+					el.classList.toggle("active", key === state);
+				});
+				currentEl.textContent = state;
+			}
+
+			const client = mqtt.connect(BROKER_URL, { reconnectPeriod: 2000 });
+
+			client.on("connect", () => {
+				connEl.textContent = "connected";
+				client.subscribe(STATUS_TOPIC);
+			});
+
+			client.on("reconnect", () => {
+				connEl.textContent = "reconnecting…";
+			});
+			client.on("close", () => {
+				connEl.textContent = "disconnected";
+			});
+			client.on("error", (err) => {
+				connEl.textContent = "error";
+				console.error(err);
+			});
+
+			client.on("message", (topic, message) => {
+				if (topic === STATE_TOPIC) {
+					highlight(message.toString());
+				}
+			});
+
+			function setStatus(state) {
+				client.publish(COMMAND_TOPIC, state);
+				highlight(state);
+			}
+		</script>
+	</body>
+</html>
